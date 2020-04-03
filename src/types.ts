@@ -45,6 +45,27 @@ export function serializeStacksMessage(message: StacksMessage): Buffer {
   }
 }
 
+export function deserializeStacksMessage(
+  bufferReader: BufferReader,
+  type: StacksMessageType | PrincipalType
+): StacksMessage {
+  switch (type) {
+    case StacksMessageType.Address:
+      return deserializeAddress(bufferReader);
+    case PrincipalType.Standard:
+    case PrincipalType.Contract:
+      return deserializePrincipal(bufferReader);
+    case StacksMessageType.LengthPrefixedString:
+      return deserializeLPString(bufferReader);
+    case StacksMessageType.MemoString:
+      return deserializeMemoString(bufferReader);
+    case StacksMessageType.AssetInfo:
+      return deserializeAssetInfo(bufferReader);
+    default:
+      throw Error(`Could not deserialize value, unidentifiable type: ${type}`);
+  }
+}
+
 export enum AddressVersion {
   MainnetSingleSig = 22,
   MainnetMultiSig = 20,
@@ -150,7 +171,7 @@ export function addressToC32String(address: Address): string {
   return c32address(address.version, address.data).toString();
 }
 
-function serializeAddress(address: Address): Buffer {
+export function serializeAddress(address: Address): Buffer {
   const bufferArray: BufferArray = new BufferArray();
   bufferArray.appendHexString(intToHexString(address.version, 1));
   bufferArray.appendHexString(address.data);
@@ -247,7 +268,7 @@ export function lengthPrefixedString(
   };
 }
 
-function serializeLPString(lps: LengthPrefixedString) {
+export function serializeLPString(lps: LengthPrefixedString) {
   const bufferArray: BufferArray = new BufferArray();
   const contentBuffer = Buffer.from(lps.content);
   const length = contentBuffer.byteLength;
@@ -256,7 +277,7 @@ function serializeLPString(lps: LengthPrefixedString) {
   return bufferArray.concatBuffer();
 }
 
-export function deserializeLPString(bufferReader: BufferReader) {
+export function deserializeLPString(bufferReader: BufferReader): LengthPrefixedString {
   const length = bufferReader.readUInt8();
   const content = bufferReader.readBuffer(length).toString();
   return lengthPrefixedString(content, length);
@@ -301,8 +322,13 @@ export interface AssetInfo {
   readonly assetName: LengthPrefixedString;
 }
 
-export function assetInfo(addressString: string, contractName: string, assetName: string) {
+export function assetInfo(
+  addressString: string,
+  contractName: string,
+  assetName: string
+): AssetInfo {
   return {
+    type: StacksMessageType.AssetInfo,
     address: address(addressString),
     contractName: lengthPrefixedString(contractName),
     assetName: lengthPrefixedString(assetName),

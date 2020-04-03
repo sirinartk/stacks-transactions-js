@@ -3,16 +3,16 @@ import { COINBASE_BUFFER_LENGTH_BYTES, PayloadType, AssetType } from './constant
 import { BufferArray } from './utils';
 
 import {
-  StacksMessage,
-  AssetInfo,
   Address,
   MemoString,
   address,
   memoString,
   LengthPrefixedString,
   lengthPrefixedString,
-  codeBodyString,
   serializeStacksMessage,
+  deserializeAddress,
+  deserializeLPString,
+  deserializeMemoString,
 } from './types';
 
 import { ClarityValue, serializeCV, deserializeCV } from './clarity/';
@@ -20,34 +20,41 @@ import { ClarityValue, serializeCV, deserializeCV } from './clarity/';
 import * as BigNum from 'bn.js';
 import { BufferReader } from './binaryReader';
 
-type Payload =
+export type Payload =
   | TokenTransferPayload
   | ContractCallPayload
   | SmartContractPayload
   | PoisonPayload
   | CoinbasePayload;
 
-interface TokenTransferPayload {
+export interface TokenTransferPayload {
   readonly payloadType: PayloadType.TokenTransfer;
   readonly recipientAddress: Address;
   readonly amount: BigNum;
   readonly memo: MemoString;
 }
 
-function tokenTransferPayload(
-  recipientAddress: string,
+export function tokenTransferPayload(
+  recipientAddress: string | Address,
   amount: BigNum,
-  memo?: string
+  memo?: string | MemoString
 ): TokenTransferPayload {
+  if (typeof recipientAddress === 'string') {
+    recipientAddress = address(recipientAddress);
+  }
+  if (typeof memo === 'string') {
+    memo = memoString(memo);
+  }
+
   return {
     payloadType: PayloadType.TokenTransfer,
-    recipientAddress: address(recipientAddress),
+    recipientAddress,
     amount,
-    memo: memo ? memoString(memo) : memoString(''),
+    memo: memo ? memo : memoString(''),
   };
 }
 
-interface ContractCallPayload {
+export interface ContractCallPayload {
   readonly payloadType: PayloadType.ContractCall;
   readonly contractAddress: Address;
   readonly contractName: LengthPrefixedString;
@@ -55,56 +62,76 @@ interface ContractCallPayload {
   readonly functionArgs: ClarityValue[];
 }
 
-function contractCallPayload(
-  contractAddress: string,
-  contractName: string,
-  functionName: string,
+export function contractCallPayload(
+  contractAddress: string | Address,
+  contractName: string | LengthPrefixedString,
+  functionName: string | LengthPrefixedString,
   functionArgs: ClarityValue[]
 ): ContractCallPayload {
+  if (typeof contractAddress === 'string') {
+    contractAddress = address(contractAddress);
+  }
+  if (typeof contractName === 'string') {
+    contractName = lengthPrefixedString(contractName);
+  }
+  if (typeof functionName === 'string') {
+    functionName = lengthPrefixedString(functionName);
+  }
+
   return {
     payloadType: PayloadType.ContractCall,
-    contractAddress: address(contractAddress),
-    contractName: lengthPrefixedString(contractName),
-    functionName: lengthPrefixedString(functionName),
+    contractAddress,
+    contractName,
+    functionName,
     functionArgs: functionArgs,
   };
 }
 
-interface SmartContractPayload {
+export interface SmartContractPayload {
   readonly payloadType: PayloadType.SmartContract;
   readonly contractName: LengthPrefixedString;
   readonly codeBody: LengthPrefixedString;
 }
 
-function smartContractPayload(contractName: string, codeBody: string): SmartContractPayload {
+export function smartContractPayload(
+  contractName: string | LengthPrefixedString,
+  codeBody: string | LengthPrefixedString
+): SmartContractPayload {
+  if (typeof contractName === 'string') {
+    contractName = lengthPrefixedString(contractName);
+  }
+  if (typeof codeBody === 'string') {
+    codeBody = lengthPrefixedString(codeBody);
+  }
+
   return {
     payloadType: PayloadType.SmartContract,
-    contractName: lengthPrefixedString(contractName),
-    codeBody: codeBodyString(contractName),
+    contractName,
+    codeBody,
   };
 }
 
-interface PoisonPayload {
+export interface PoisonPayload {
   readonly payloadType: PayloadType.PoisonMicroblock;
 }
 
-function poisonPayload(): PoisonPayload {
+export function poisonPayload(): PoisonPayload {
   return { payloadType: PayloadType.PoisonMicroblock };
 }
 
-interface CoinbasePayload {
+export interface CoinbasePayload {
   payloadType: PayloadType.Coinbase;
   coinbaseBuffer: Buffer;
 }
 
-function coinbasePayload(coinbaseBuffer: Buffer) {
+export function coinbasePayload(coinbaseBuffer: Buffer): CoinbasePayload {
   if (coinbaseBuffer.byteLength != COINBASE_BUFFER_LENGTH_BYTES) {
     throw Error(`Coinbase buffer size must be ${COINBASE_BUFFER_LENGTH_BYTES} bytes`);
   }
   return { payloadType: PayloadType.Coinbase, coinbaseBuffer };
 }
 
-function serializePayload(payload: Payload): Buffer {
+export function serializePayload(payload: Payload): Buffer {
   const bufferArray: BufferArray = new BufferArray();
   bufferArray.appendByte(payload.payloadType);
 
@@ -142,98 +169,38 @@ function serializePayload(payload: Payload): Buffer {
   return bufferArray.concatBuffer();
 }
 
-// export class Payload extends StacksMessage {
-//   payloadType?: PayloadType;
+export function deserializePayload(bufferReader: BufferReader): Payload {
+  const payloadType = bufferReader.readUInt8Enum(PayloadType, n => {
+    throw new Error(`Cannot recognize PayloadType: ${n}`);
+  });
 
-//   assetType?: AssetType;
-//   assetInfo?: AssetInfo;
-//   assetName?: LengthPrefixedString;
-//   recipientAddress?: Address;
-//   amount?: BigNum;
-//   memo?: MemoString;
-
-//   contractAddress?: Address;
-//   contractName?: LengthPrefixedString;
-//   functionName?: LengthPrefixedString;
-//   functionArgs?: ClarityValue[];
-
-//   codeBody?: CodeBodyString;
-
-//   coinbaseBuffer?: Buffer;
-
-//   serialize(): Buffer {
-//     const bufferArray: BufferArray = new BufferArray();
-
-//     if (this.payloadType === undefined) {
-//       throw new Error('"payloadType" is undefined');
-//     }
-//     bufferArray.appendHexString(this.payloadType);
-
-//     switch (this.payloadType) {
-//       case PayloadType.TokenTransfer:
-//         if (this.recipientAddress === undefined) {
-//           throw new Error('"recipientAddress" is undefined');
-//         }
-//         bufferArray.push(this.recipientAddress.serialize());
-//         if (this.amount === undefined) {
-//           throw new Error('"amount" is undefined');
-//         }
-//         bufferArray.push(this.amount.toArrayLike(Buffer, 'be', 8));
-//         if (this.memo === undefined) {
-//           throw new Error('"memo" is undefined');
-//         }
-//         bufferArray.push(this.memo.serialize());
-//         break;
-//       case PayloadType.ContractCall:
-//         if (this.contractAddress === undefined) {
-//           throw new Error('"contractAddress" is undefined');
-//         }
-//         if (this.contractName === undefined) {
-//           throw new Error('"contractName" is undefined');
-//         }
-//         if (this.functionName === undefined) {
-//           throw new Error('"functionName" is undefined');
-//         }
-//         if (this.functionArgs === undefined) {
-//           throw new Error('"functionArgs" is undefined');
-//         }
-//         bufferArray.push(this.contractAddress.serialize());
-//         bufferArray.push(this.contractName.serialize());
-//         bufferArray.push(this.functionName.serialize());
-//         const numArgs = Buffer.alloc(4);
-//         numArgs.writeUInt32BE(this.functionArgs.length, 0);
-//         bufferArray.push(numArgs);
-//         this.functionArgs.forEach(arg => {
-//           bufferArray.push(serializeCV(arg));
-//         });
-//         break;
-//       case PayloadType.SmartContract:
-//         if (this.contractName === undefined) {
-//           throw new Error('"contractName" is undefined');
-//         }
-//         if (this.codeBody === undefined) {
-//           throw new Error('"codeBody" is undefined');
-//         }
-//         bufferArray.push(this.contractName.serialize());
-//         bufferArray.push(this.codeBody.serialize());
-//         break;
-//       case PayloadType.PoisonMicroblock:
-//         // TODO: implement
-//         break;
-//       case PayloadType.Coinbase:
-//         if (this.coinbaseBuffer === undefined) {
-//           throw new Error('"coinbaseBuffer" is undefined');
-//         }
-//         if (this.coinbaseBuffer.byteLength != COINBASE_BUFFER_LENGTH_BYTES) {
-//           throw Error(`Coinbase buffer size must be ${COINBASE_BUFFER_LENGTH_BYTES} bytes`);
-//         }
-//         bufferArray.push(this.coinbaseBuffer);
-//         break;
-//       default:
-//         break;
-//     }
-
-//     return bufferArray.concatBuffer();
-//   }
-
-// }
+  switch (payloadType) {
+    case PayloadType.TokenTransfer:
+      const recipientAddress = deserializeAddress(bufferReader);
+      const amount = new BigNum(bufferReader.readUInt8());
+      // const amount = new BigNum(bufferReader.readBuffer(8).toString('hex'), 16);
+      const memo = deserializeMemoString(bufferReader);
+      return tokenTransferPayload(recipientAddress, amount, memo);
+    case PayloadType.ContractCall:
+      const contractAddress = deserializeAddress(bufferReader);
+      const contractCallName = deserializeLPString(bufferReader);
+      const functionName = deserializeLPString(bufferReader);
+      const functionArgs = [];
+      const numberOfArgs = bufferReader.readUInt32BE();
+      for (let i = 0; i < numberOfArgs; i++) {
+        const clarityValue = deserializeCV(bufferReader);
+        functionArgs.push(clarityValue);
+      }
+      return contractCallPayload(contractAddress, contractCallName, functionName, functionArgs);
+    case PayloadType.SmartContract:
+      const smartContractName = deserializeLPString(bufferReader);
+      const codeBody = deserializeLPString(bufferReader);
+      return smartContractPayload(smartContractName, codeBody);
+    case PayloadType.PoisonMicroblock:
+      // TODO: implement
+      return poisonPayload();
+    case PayloadType.Coinbase:
+      const coinbaseBuffer = bufferReader.readBuffer(COINBASE_BUFFER_LENGTH_BYTES);
+      return coinbasePayload(coinbaseBuffer);
+  }
+}

@@ -28,6 +28,10 @@ import {
   AssetInfo,
   StandardPrincipal,
   ContractPrincipal,
+  lengthPrefixedString,
+  deserializeLPString,
+  StacksMessageType,
+  serializeLPString,
 } from '../../src/types';
 
 import {
@@ -98,23 +102,26 @@ test('ECDSA recoverable signature', () => {
 
 test('Length prefixed strings serialization and deserialization', () => {
   const testString = 'test message string';
-  const lpString = new LengthPrefixedString(testString);
-  const deserialized = serializeDeserialize(lpString, LengthPrefixedString);
+  const lpString = lengthPrefixedString(testString);
+  const deserialized = serializeDeserialize(
+    lpString,
+    StacksMessageType.LengthPrefixedString
+  ) as LengthPrefixedString;
   expect(deserialized.content).toBe(testString);
 
   const longTestString = 'a'.repeat(129);
-  const longString = new LengthPrefixedString(longTestString);
+  const longString = lengthPrefixedString(longTestString);
 
-  expect(() => longString.serialize()).toThrow('String length exceeds maximum bytes 128');
+  expect(() => serializeLPString(longString)).toThrow('String length exceeds maximum bytes 128');
 });
 
 test('Length prefixed list serialization and deserialization', () => {
   const addressList = [
-    new Address('SP9YX31TK12T0EZKWP3GZXX8AM37JDQHAWM7VBTH'),
-    new Address('SP26KJ60PHEBVMJ7DD515T3VEMM4XWJG7GMWSDFC2'),
-    new Address('SP3ZZXBQXNA8296BV0D6W38FK3SK0XWM26EFT4M8C'),
-    new Address('SP3E6KW7QVBBGBZDSNWWPX9672Z4MZPRRM2X68KKM'),
-    new Address('SP15ZKFY43G0P3XBW95RHK82PYDT8B38QYFRY75EV'),
+    address('SP9YX31TK12T0EZKWP3GZXX8AM37JDQHAWM7VBTH'),
+    address('SP26KJ60PHEBVMJ7DD515T3VEMM4XWJG7GMWSDFC2'),
+    address('SP3ZZXBQXNA8296BV0D6W38FK3SK0XWM26EFT4M8C'),
+    address('SP3E6KW7QVBBGBZDSNWWPX9672Z4MZPRRM2X68KKM'),
+    address('SP15ZKFY43G0P3XBW95RHK82PYDT8B38QYFRY75EV'),
   ];
 
   const lpList = new LengthPrefixedList<Address>();
@@ -175,8 +182,8 @@ test('C32 address hash mode - testnet P2SH', () => {
 
 test('C32check addresses serialization and deserialization', () => {
   const c32AddressString = 'SP9YX31TK12T0EZKWP3GZXX8AM37JDQHAWM7VBTH';
-  const address = new Address(c32AddressString);
-  const deserialized = serializeDeserialize(address, Address);
+  const addr = address(c32AddressString);
+  const deserialized = serializeDeserialize(addr, Address);
   expect(deserialized.toString()).toBe(c32AddressString);
 });
 
